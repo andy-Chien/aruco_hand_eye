@@ -3,7 +3,7 @@
   <name>aruco_hand_eye</name>
   <version>0.1.0</version>
   <description>
-    This package uses aruco_ros and vis_hand2eye_calibration to determine the
+    This package uses aruco_detect and vis_hand2eye_calibration to determine the
     extrinisc parameters of cameras.
   </description>
 
@@ -43,9 +43,9 @@
   <!-- Use test_depend for packages you need only for testing: -->
   <!--   <test_depend>gtest</test_depend> -->
   <buildtool_depend>catkin</buildtool_depend>
-  <build_depend>aruco_ros</build_depend>
+  <build_depend>aruco_detect</build_depend>
   <build_depend>visp_hand2eye_calibration</build_depend>
-  <run_depend>aruco_ros</run_depend>
+  <run_depend>aruco_detect</run_depend>
   <run_depend>visp_hand2eye_calibration</run_depend>
 
 

@@ -37,9 +37,10 @@
   <group ns="$(arg camera)">
 
     <!-- Track the aruco target in a given camera -->
+    <!-- 
     <node name="aruco_tracker"
-      pkg="aruco_ros"
-      type="single">
+      pkg="aruco_detect"
+      type="aruco_detect">
       <remap from="/camera_info" to="$(arg camera_info)" />
       <remap from="/image" to="$(arg image)" />
 
@@ -50,7 +51,7 @@
       <param name="camera_frame"       value="$(arg camera_frame)"/>
       <param name="marker_frame"       value="$(arg marker_frame)" />
     </node>
-
+    -->
     <!-- Run the VISP solver to determine the extrinsic parameters -->
     <node name="hand_eye_solver"
       pkg="visp_hand2eye_calibration"
@@ -64,6 +65,11 @@
       pkg="aruco_hand_eye"
       type="calibrate.py"
       output="screen">
+      <param name="marker_size"        value="$(arg markersize)"/>
+      <param name="marker_id"          value="$(arg markerid)"/>
+      <param name="reference_frame"    value="$(arg reference_frame)"/>
+      <param name="camera_frame"       value="$(arg camera_frame)"/>
+      <param name="marker_frame"       value="$(arg marker_frame)" />
       <param name="sample_rate" value="$(arg sample_rate)"/>
       <param name="camera_parent_frame" value="$(arg camera_parent_frame)"/>
       <param name="marker_parent_frame" value="$(arg marker_parent_frame)"/>

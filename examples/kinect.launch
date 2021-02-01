@@ -1,6 +1,6 @@
 <launch>
   <!-- The end-effector frame_id -->
-  <arg name="ee_frame"/>
+  <arg name="ee_frame" value="ee"/>
 
   <!-- Bring up a kinect -->
   <include file="$(find freenect_launch)/launch/freenect.launch">

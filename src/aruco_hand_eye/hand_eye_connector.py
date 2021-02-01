@@ -7,6 +7,7 @@ import PyKDL
 from geometry_msgs.msg import Vector3, Quaternion, Transform, TransformStamped
 from visp_hand2eye_calibration.msg import TransformArray
 from visp_hand2eye_calibration.srv import compute_effector_camera_quick
+from aruco_hand_eye.srv import aruco_info, aruco_infoRequest, hand_eye_calibration, hand_eye_calibrationResponse
 
 class HandEyeConnector(object):
     def __init__(self):
@@ -29,6 +30,7 @@ class HandEyeConnector(object):
         self.tf_suffix = rospy.get_param('~tf_suffix')
         self.sample_rate = rospy.get_param('~sample_rate')
         self.interactive = rospy.get_param('~interactive')
+        self.marker_id = rospy.get_param('~marker_id')
 
         # Compute the camera base to optical transform
         self.xyz_optical_base = rospy.get_param('~xyz_optical_base', [0,0,0])
@@ -50,17 +52,28 @@ class HandEyeConnector(object):
         self.camera_marker_samples = TransformArray()
 
         # marker subscriber
-        self.aruco_subscriber = rospy.Subscriber(
-                'aruco_tracker/transform',
-                TransformStamped,
-                self.aruco_cb,
-                queue_size=1)
+        # self.aruco_subscriber = rospy.Subscriber(
+        #         'aruco_tracker/transform',
+        #         TransformStamped,
+        #         self.aruco_cb,
+        #         queue_size=1)
 
         # calibration service
         rospy.wait_for_service('compute_effector_camera_quick')
         self.calibrate = rospy.ServiceProxy(
                 'compute_effector_camera_quick',
                 compute_effector_camera_quick)
+
+    def aruco_tracker(self):
+        req = aruco_infoRequest()
+        req.id = self.marker_id
+        rospy.wait_for_service('get_ar_marker')
+        try:
+            get_aruco = rospy.ServiceProxy('get_ar_marker', aruco_info)
+            res = get_aruco(req)
+            return res
+        except rospy.ServiceException as e:
+            print("Service call failed: %s"%e)
 
     def compute_calibration(self, msg):
         rospy.loginfo("Computing from %g poses..." % len(self.hand_world_samples.transforms) )
@@ -88,7 +101,7 @@ class HandEyeConnector(object):
         ec = result.effector_camera
         xyz = (ec.translation.x, ec.translation.y, ec.translation.z)
         xyzw = (ec.rotation.x, ec.rotation.y, ec.rotation.z, ec.rotation.w)
-        rpy = tuple(PyKDL.Rotation.Quaternion(*xyzw).GetRPY())
+        # rpy = tuple(PyKDL.Rotation.Quaternion(*xyzw).GetRPY())
 
         F_optical_world = PyKDL.Frame(PyKDL.Rotation.Quaternion(*xyzw), PyKDL.Vector(*xyz))
         F_base_world = F_optical_world * self.F_base_optical
@@ -96,35 +109,47 @@ class HandEyeConnector(object):
         bw = tfconv.toMsg(F_base_world)
         xyz = (bw.position.x, bw.position.y, bw.position.z)
         xyzw = (bw.orientation.x, bw.orientation.y, bw.orientation.z, bw.orientation.w)
-        rpy = tuple(PyKDL.Rotation.Quaternion(*xyzw).GetRPY())
+        # rpy = tuple(PyKDL.Rotation.Quaternion(*xyzw).GetRPY())
 
         rospy.loginfo("Base xyz: ( %f %f %f ) rpy: ( %f %f %f ) xyzw: ( %f %f %f %f )" % (xyz+rpy+xyzw))
 
         return result
 
-    def aruco_cb(self, msg):
-
+    def aruco_cb(self, end_trans):
+        aruco = self.aruco_tracker()
+        rotation = cv2.Rodrigues(aruco.rvecs)[0]
+        quaternion = tf.transformations.quaternion_from_matrix(rotation)
+        msg = TransformStamped()
+        msg.transform.translation.x = aruco.tvecs[0][0]
+        msg.transform.translation.y = aruco.tvecs[0][1]
+        msg.transform.translation.z = aruco.tvecs[0][2]
+        msg.transform.rotation.x = quaternion[0]
+        msg.transform.rotation.y = quaternion[1]
+        msg.transform.rotation.z = quaternion[2]
+        msg.transform.rotation.w = quaternion[3]
+        msg.header.frame_id = 'ar_marker'
+        
         rospy.loginfo("Received marker sample.")
 
         # Get the camera optical frame for convenience
         optical_frame_id = msg.header.frame_id
 
-        try:
-            # Get the transform between the marker and camera frames (from FK)
-            self.listener.waitForTransform(
-                self.marker_parent_frame_id, self.camera_parent_frame_id,
-                msg.header.stamp, rospy.Duration(0.1))
+        # try:
+        #     # Get the transform between the marker and camera frames (from FK)
+        #     self.listener.waitForTransform(
+        #         self.marker_parent_frame_id, self.camera_parent_frame_id,
+        #         msg.header.stamp, rospy.Duration(0.1))
 
-            (trans,rot) = self.listener.lookupTransform(
-                self.marker_parent_frame_id, self.camera_parent_frame_id,
-                msg.header.stamp)
-        except tf.Exception as ex:
-            rospy.logwarn(str(ex))
-            return
+        #     (trans,rot) = self.listener.lookupTransform(
+        #         self.marker_parent_frame_id, self.camera_parent_frame_id,
+        #         msg.header.stamp)
+        # except tf.Exception as ex:
+        #     rospy.logwarn(str(ex))
+        #     return
 
         # Update data
         self.hand_world_samples.header.frame_id = optical_frame_id
-        self.hand_world_samples.transforms.append(Transform(Vector3(*trans), Quaternion(*rot)))
+        self.hand_world_samples.transforms.append(end_trans)
 
         self.camera_marker_samples.header.frame_id = optical_frame_id
         self.camera_marker_samples.transforms.append(msg.transform)
@@ -134,10 +159,11 @@ class HandEyeConnector(object):
             return
 
         n_min = 2
+        res = hand_eye_calibrationResponse()
         if len(self.hand_world_samples.transforms) < n_min:
             rospy.logwarn("%d more samples needed..." % (n_min-len(self.hand_world_samples.transforms)))
         else:
-            self.compute_calibration(msg)
+            res.end2cam_trans = self.compute_calibration(msg)
 
         # interactive
         if self.interactive:
